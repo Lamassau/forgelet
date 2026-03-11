@@ -292,6 +292,11 @@ func importImage(cfg *forgeletConfig, image string) error {
 		return runCommand("", "bash", "-lc", cmd)
 	}
 
+	if os.Getenv("CODESPACES") == "true" {
+		cmd := fmt.Sprintf("podman save %s | sudo k0s ctr images import -", image)
+		return runCommand("", "bash", "-lc", cmd)
+	}
+
 	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("k0s-image-%d.tar", os.Getpid()))
 	if err := runCommand("", "podman", "save", "-o", tmpTar, image); err != nil {
 		return err
