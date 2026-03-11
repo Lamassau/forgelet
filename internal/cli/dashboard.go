@@ -75,12 +75,12 @@ subjects:
 		fmt.Println("\n=======================================================")
 		fmt.Println("Kubernetes Dashboard Token (valid for 24h):")
 		fmt.Println(token)
-		fmt.Println("=======================================================\n")
+		fmt.Println("=======================================================")
 
 		fmt.Println("Starting kubectl proxy on http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/ (Ctrl+C to stop)...")
-		
+
 		url := "http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/"
-		
+
 		// Attempt to open browser
 		go func() {
 			time.Sleep(2 * time.Second)

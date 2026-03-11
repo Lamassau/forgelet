@@ -43,7 +43,7 @@ var devCmd = &cobra.Command{
 		if os.Getenv("CODESPACES") == "true" {
 			fmt.Println("\nCodespace detected! Skaffold is deploying your inner dev loop.")
 			fmt.Println("Any services exposed by Traefik will be port-forwarded by GitHub automatically.")
-			fmt.Println("Check the 'Ports' tab in your VSCode / Browser to access your application.\n")
+			fmt.Println("Check the 'Ports' tab in your VSCode / Browser to access your application.")
 		}
 
 		fmt.Println("Starting Skaffold dev loop (Ctrl+C to stop and clean up)...")
