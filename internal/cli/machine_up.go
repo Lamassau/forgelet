@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -17,7 +18,11 @@ var machineUpCmd = &cobra.Command{
 
 		if cfg.K0SMode == "native" {
 			fmt.Println("Native mode - no Podman machine required")
-			_ = runCommand("", "systemctl", "--user", "start", "podman.socket")
+			if os.Getenv("CODESPACES") != "true" {
+				_ = runCommand("", "systemctl", "--user", "start", "podman.socket")
+			} else {
+				fmt.Println("Codespace detected - skipping systemctl for podman.socket")
+			}
 			return nil
 		}
 

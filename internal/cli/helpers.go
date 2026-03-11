@@ -70,6 +70,10 @@ func findforgeletDir() (string, error) {
 }
 
 func detectPlatform() (string, string) {
+	if os.Getenv("CODESPACES") == "true" {
+		return "linux", "native"
+	}
+
 	if runtime.GOOS == "darwin" {
 		return "darwin", "vm"
 	}

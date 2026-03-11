@@ -81,6 +81,9 @@ var deployCmd = &cobra.Command{
 			ip, _ := runKctlOutput(cfg, "get", "svc", "traefik", "-n", "traefik-system", "-o", "jsonpath={.status.loadBalancer.ingress[0].ip}")
 			if strings.TrimSpace(ip) != "" {
 				fmt.Printf("\nTraefik LoadBalancer IP: %s\n", strings.TrimSpace(ip))
+				if os.Getenv("CODESPACES") == "true" {
+					fmt.Printf("Codespace detected! Ensure ports 80/443 are forwarded in the 'Ports' tab, or view your services through the Codespace URL.\n")
+				}
 				return nil
 			}
 			fmt.Print(".")

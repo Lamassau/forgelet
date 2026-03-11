@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 
 	"github.com/spf13/cobra"
@@ -35,6 +36,12 @@ var devCmd = &cobra.Command{
 		fmt.Println("Building and pushing app images...")
 		if err := buildCmd.RunE(buildCmd, nil); err != nil {
 			return err
+		}
+
+		if os.Getenv("CODESPACES") == "true" {
+			fmt.Println("\nCodespace detected! Skaffold is deploying your inner dev loop.")
+			fmt.Println("Any services exposed by Traefik will be port-forwarded by GitHub automatically.")
+			fmt.Println("Check the 'Ports' tab in your VSCode / Browser to access your application.\n")
 		}
 
 		fmt.Println("Starting Skaffold dev loop (Ctrl+C to stop and clean up)...")

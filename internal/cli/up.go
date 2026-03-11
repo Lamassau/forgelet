@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 )
@@ -10,6 +11,10 @@ var upCmd = &cobra.Command{
 	Use:   "up",
 	Short: "Full bootstrap (new developer? start here)",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if os.Getenv("CODESPACES") == "true" {
+			fmt.Println("GitHub Codespaces detected. Running in native Linux mode.")
+		}
+		
 		fmt.Println("Full bootstrap - setting up local k0s environment...")
 
 		err := runSteps(
