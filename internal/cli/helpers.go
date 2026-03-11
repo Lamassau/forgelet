@@ -306,3 +306,24 @@ func importImage(cfg *forgeletConfig, image string) error {
 	return runCommand("", "sudo", "k0s", "ctr", "images", "import", tmpTar)
 }
 
+func applyEnvSecrets(cfg *forgeletConfig) error {
+	envFile := filepath.Join(cfg.ProjectDir, ".env.local")
+	if _, err := os.Stat(envFile); os.IsNotExist(err) {
+		envFile = filepath.Join(cfg.ProjectDir, ".env")
+		if _, err := os.Stat(envFile); os.IsNotExist(err) {
+			return nil // No env file to apply
+		}
+	}
+
+	fmt.Printf("Applying secrets from %s to namespace %s\n", filepath.Base(envFile), cfg.BuildEnv)
+
+	// We need to pipe: kubectl create secret ... --dry-run=client -o yaml | kubectl apply -f -
+	cmdStr := fmt.Sprintf("kubectl create secret generic forgelet-secrets --from-env-file=%s -n %s --dry-run=client -o yaml | kubectl apply -f -", envFile, cfg.BuildEnv)
+	
+	if cfg.BuildEnv == "local" {
+		cmdStr = fmt.Sprintf("sudo k0s kubectl create secret generic forgelet-secrets --from-env-file=%s -n %s --dry-run=client -o yaml | sudo k0s kubectl apply -f -", envFile, cfg.BuildEnv)
+	}
+
+	return runCommand("", "bash", "-c", cmdStr)
+}
+

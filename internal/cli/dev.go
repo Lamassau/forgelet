@@ -25,6 +25,8 @@ var devCmd = &cobra.Command{
 			return fmt.Errorf("cannot reach cluster. run 'forgelet up' or 'forgelet kubeconfig' first")
 		}
 
+		_ = applyEnvSecrets(cfg)
+
 		fmt.Println("Synthesizing CDK8s manifests...")
 		if err := runCommand(cfg.InfraDir, "pnpm", "install", "--silent"); err != nil {
 			return err

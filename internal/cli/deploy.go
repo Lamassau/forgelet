@@ -48,6 +48,8 @@ var deployCmd = &cobra.Command{
 			_ = os.Setenv("METALLB_POOL_RANGE", cfg.MetallbPool)
 		}
 
+		_ = applyEnvSecrets(cfg)
+
 		if err := runCommand(cfg.InfraDir, "pnpm", "install", "--silent"); err != nil {
 			return err
 		}
