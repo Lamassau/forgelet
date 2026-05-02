@@ -35,7 +35,7 @@ forgelet --help
 
 ## Quick Start
 
-1. Ensure project config exists at `.forgelet/forgelet.yaml` (or in a parent directory).
+1. Ensure project config exists at `.devenv/forgelet.yaml` (or in a parent directory).
 2. Run full bootstrap:
 
 ```bash
@@ -59,7 +59,7 @@ forgelet status
 - `forgelet deploy` — deploy platform services
 - `forgelet dns` — configure local DNS
 - `forgelet dev` — run skaffold dev loop
-- `forgelet reset` — wipe/reinstall k0s and redeploy
+- `forgelet reset` — wipe k0s but keep runtime
 - `forgelet destroy` — tear down environment
 
 ## Project Layout

@@ -2,8 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -43,25 +41,18 @@ var k0sInstallCmd = &cobra.Command{
 
 		k0sConfig := fmt.Sprintf("apiVersion: k0s.k0sproject.io/v1beta1\nkind: ClusterConfig\nmetadata:\n  name: %s\nspec:\n  api:\n    sans:\n      - %s\n      - 127.0.0.1\n      - localhost\n  network:\n    provider: kuberouter\n    podCIDR: 10.244.0.0/16\n    serviceCIDR: 10.96.0.0/12\n", cfg.ClusterName, hostIP)
 
-		tmpFile := filepath.Join(os.TempDir(), "k0s.yaml")
-		if err := os.WriteFile(tmpFile, []byte(k0sConfig), 0644); err != nil {
-			return err
-		}
-		defer os.Remove(tmpFile)
-
 		if cfg.K0SMode == "vm" {
 			if err := runK0SExec(cfg, "sudo", "mkdir", "-p", "/etc/k0s"); err != nil {
 				return err
 			}
-			copyCmd := fmt.Sprintf("cat %s | podman machine ssh %s -- sudo tee /etc/k0s/k0s.yaml >/dev/null", tmpFile, cfg.ClusterName)
-			if err := runCommand("", "bash", "-lc", copyCmd); err != nil {
+			if err := runCommandWithInput("", k0sConfig, "podman", "machine", "ssh", cfg.ClusterName, "--", "sudo", "tee", "/etc/k0s/k0s.yaml"); err != nil {
 				return err
 			}
 		} else {
 			if err := runCommand("", "sudo", "mkdir", "-p", "/etc/k0s"); err != nil {
 				return err
 			}
-			if err := runCommand("", "sudo", "cp", tmpFile, "/etc/k0s/k0s.yaml"); err != nil {
+			if err := runCommandWithInput("", k0sConfig, "sudo", "tee", "/etc/k0s/k0s.yaml"); err != nil {
 				return err
 			}
 		}
@@ -90,7 +81,11 @@ var k0sInstallCmd = &cobra.Command{
 			time.Sleep(3 * time.Second)
 		}
 
-		return runK0SSudo(cfg, "k0s", "kubectl", "get", "nodes", "-o", "wide")
+		if err := runK0SSudo(cfg, "k0s", "kubectl", "get", "nodes", "-o", "wide"); err != nil {
+			return err
+		}
+		fmt.Println("k0s up and running")
+		return nil
 	},
 }
 

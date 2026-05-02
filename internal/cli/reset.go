@@ -9,7 +9,7 @@ import (
 
 var resetCmd = &cobra.Command{
 	Use:   "reset",
-	Short: "Wipe k0s and redeploy (keeps runtime)",
+	Short: "Wipe k0s but keep the runtime",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cfg, err := loadConfig()
 		if err != nil {
@@ -22,12 +22,13 @@ var resetCmd = &cobra.Command{
 		_ = runK0SSudo(cfg, "rm", "-rf", "/var/lib/k0s", "/etc/k0s")
 		_ = os.Remove(cfg.KubeConfigPath)
 
-		return runSteps(
-			func() error { return k0sInstallCmd.RunE(k0sInstallCmd, nil) },
-			func() error { return kubeconfigCmd.RunE(kubeconfigCmd, nil) },
-			func() error { return buildCmd.RunE(buildCmd, nil) },
-			func() error { return deployCmd.RunE(deployCmd, nil) },
-		)
+		if cfg.K0SMode == "vm" {
+			fmt.Println("k0s wiped. The Podman Machine is still running.")
+		} else {
+			fmt.Println("k0s wiped.")
+		}
+		fmt.Println("Run 'forgelet k0s-install' then 'forgelet deploy' to rebuild.")
+		return nil
 	},
 }
 

@@ -3,13 +3,16 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 type BuildService struct {
@@ -25,39 +28,52 @@ type BuildService struct {
 }
 
 type forgeletConfig struct {
-	ClusterName    string
-	KubeConfigDir  string
-	KubeConfigPath string
-	AppName        string
-	Domain         string
-	MachineCPUs    int
-	MachineMemory  int
-	MachineDisk    int
-	DockerRegistry string
-	K0SVersion     string
-	MetallbVersion string
-	MetallbPool    string
-	TraefikImage   string
-	TraefikCRDURL  string
-	Version        string
-	BuildEnv       string
-	Services       []BuildService
-	Platform       string
-	K0SMode        string
-	ProjectDir     string
-	InfraDir       string
+	ClusterName       string
+	KubeConfigDir     string
+	KubeConfigPath    string
+	AppName           string
+	Domain            string
+	MachineCPUs       int
+	MachineMemory     int
+	MachineDisk       int
+	DockerRegistry    string
+	K0SVersion        string
+	MetallbVersion    string
+	MetallbPool       string
+	TraefikImage      string
+	TraefikCRDURL     string
+	Version           string
+	BuildEnv          string
+	Services          []BuildService
+	Platform          string
+	K0SMode           string
+	ProjectDir        string
+	ConfigDir         string
+	ConfigFile        string
+	ConfigExists      bool
+	InfraDir          string
+	DockerComposeFile string
 }
 
-func findforgeletDir() (string, error) {
+func findProjectRoot() (string, string, string, bool, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "", err
+		return "", "", "", false, err
 	}
 
 	for dir := cwd; ; dir = filepath.Dir(dir) {
-		candidate := filepath.Join(dir, ".forgelet", "forgelet.yaml")
-		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
-			return filepath.Join(dir, ".forgelet"), nil
+		forgeletDevenvFile := filepath.Join(dir, ".devenv", "forgelet.yaml")
+		if info, statErr := os.Stat(forgeletDevenvFile); statErr == nil && !info.IsDir() {
+			return dir, filepath.Join(dir, ".devenv"), forgeletDevenvFile, true, nil
+		}
+
+		forgeletFile := filepath.Join(dir, ".forgelet", "forgelet.yaml")
+		if info, statErr := os.Stat(forgeletFile); statErr == nil && !info.IsDir() {
+			return dir, filepath.Join(dir, ".forgelet"), forgeletFile, true, nil
+		}
+
+		if info, statErr := os.Stat(filepath.Join(dir, "go.mod")); statErr == nil && !info.IsDir() {
+			return dir, filepath.Join(dir, ".devenv"), filepath.Join(dir, ".devenv", "forgelet.yaml"), false, nil
 		}
 
 		parent := filepath.Dir(dir)
@@ -66,7 +82,7 @@ func findforgeletDir() (string, error) {
 		}
 	}
 
-	return "", errors.New("could not find .forgelet directory from current path")
+	return "", "", "", false, errors.New("could not find project root from current path")
 }
 
 func detectPlatform() (string, string) {
@@ -113,15 +129,17 @@ func resolveVarRef(value string, appName string, serviceName string) string {
 }
 
 func loadConfig() (*forgeletConfig, error) {
-	forgeletDir, err := findforgeletDir()
+	projectDir, configDir, configFile, configExists, err := findProjectRoot()
 	if err != nil {
 		return nil, err
 	}
 
 	v := viper.New()
-	v.SetConfigFile(filepath.Join(forgeletDir, "forgelet.yaml"))
-	if err := v.ReadInConfig(); err != nil {
-		return nil, fmt.Errorf("failed to read forgelet.yaml: %w", err)
+	if configExists {
+		v.SetConfigFile(configFile)
+		if err := v.ReadInConfig(); err != nil {
+			return nil, fmt.Errorf("failed to read %s: %w", filepath.Base(configFile), err)
+		}
 	}
 
 	platform, mode := detectPlatform()
@@ -135,6 +153,9 @@ func loadConfig() (*forgeletConfig, error) {
 	kubeDir = strings.Replace(kubeDir, "~", os.Getenv("HOME"), 1)
 
 	buildEnv := firstNonEmpty(
+		os.Getenv("APP_ENV"),
+		os.Getenv("DEVENV_ENV"),
+		os.Getenv("FORGELET_ENV"),
 		os.Getenv("forgelet_ENV"),
 		v.GetString("build.Environment"),
 		v.GetString("build.defaultEnvironment"),
@@ -142,35 +163,51 @@ func loadConfig() (*forgeletConfig, error) {
 	)
 
 	services := []BuildService{}
-	if err := v.UnmarshalKey("build.services", &services); err != nil {
-		return nil, fmt.Errorf("failed to parse build.services: %w", err)
+	if configExists && v.IsSet("build.services") {
+		if err := v.UnmarshalKey("build.services", &services); err != nil {
+			return nil, fmt.Errorf("failed to parse build.services: %w", err)
+		}
+	}
+
+	dockerComposeFile := firstNonEmpty(os.Getenv("DOCKER_COMPOSE_FILE"), filepath.Join(configDir, "docker-compose.yml"))
+	if _, statErr := os.Stat(dockerComposeFile); statErr != nil {
+		fallbackCompose := filepath.Join(projectDir, ".devcontainer", "docker-compose.yml")
+		if info, fallbackErr := os.Stat(fallbackCompose); fallbackErr == nil && !info.IsDir() {
+			dockerComposeFile = fallbackCompose
+		}
+	}
+
+	infraDir := firstNonEmpty(os.Getenv("INFRA_DIR"), filepath.Join(configDir, ".infra"))
+	if !directoryExists(infraDir) {
+		infraDir = filepath.Join(projectDir, ".infra")
 	}
 
 	cfg := &forgeletConfig{
-		ClusterName:    clusterName,
-		KubeConfigDir:  kubeDir,
-		KubeConfigPath: filepath.Join(kubeDir, clusterName),
-		AppName:        appName,
-		Domain:         domain,
-		MachineCPUs:    v.GetInt("podman.machine.cpus"),
-		MachineMemory:  v.GetInt("podman.machine.memory"),
-		MachineDisk:    v.GetInt("podman.machine.disk"),
-		DockerRegistry: firstNonEmpty(os.Getenv("DOCKER_REGISTRY"), v.GetString("podman.registry")),
-		K0SVersion:     firstNonEmpty(os.Getenv("K0S_VERSION"), v.GetString("k0s.version")),
-		MetallbVersion: firstNonEmpty(v.GetString("metallb.version"), "v0.14.9"),
-		MetallbPool:    firstNonEmpty(os.Getenv("METALLB_POOL_RANGE"), v.GetString("metallb.poolRange")),
-		TraefikImage:   firstNonEmpty(v.GetString("traefik.image"), "traefik:v3.2"),
-		TraefikCRDURL: firstNonEmpty(
-			v.GetString("traefik.crdUrl"),
-			"https://raw.githubusercontent.com/traefik/traefik/v3.2.0/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml",
-		),
-		Version:    firstNonEmpty(os.Getenv("VERSION"), v.GetString("build.version"), "local"),
-		BuildEnv:   buildEnv,
-		Services:   services,
-		Platform:   platform,
-		K0SMode:    mode,
-		ProjectDir: forgeletDir,
-		InfraDir:   filepath.Join(forgeletDir, ".infra"),
+		ClusterName:       clusterName,
+		KubeConfigDir:     kubeDir,
+		KubeConfigPath:    filepath.Join(kubeDir, clusterName),
+		AppName:           appName,
+		Domain:            domain,
+		MachineCPUs:       v.GetInt("podman.machine.cpus"),
+		MachineMemory:     v.GetInt("podman.machine.memory"),
+		MachineDisk:       v.GetInt("podman.machine.disk"),
+		DockerRegistry:    firstNonEmpty(os.Getenv("DOCKER_REGISTRY"), v.GetString("podman.registry"), "localhost:5000"),
+		K0SVersion:        firstNonEmpty(os.Getenv("K0S_VERSION"), v.GetString("k0s.version")),
+		MetallbVersion:    firstNonEmpty(v.GetString("metallb.version"), "v0.14.9"),
+		MetallbPool:       firstNonEmpty(os.Getenv("METALLB_POOL_RANGE"), v.GetString("metallb.poolRange")),
+		TraefikImage:      firstNonEmpty(v.GetString("traefik.image"), "traefik:v3.2"),
+		TraefikCRDURL:     firstNonEmpty(v.GetString("traefik.crdUrl"), "https://raw.githubusercontent.com/traefik/traefik/v3.2.0/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml"),
+		Version:           firstNonEmpty(os.Getenv("VERSION"), v.GetString("build.version"), buildEnv),
+		BuildEnv:          buildEnv,
+		Services:          services,
+		Platform:          platform,
+		K0SMode:           mode,
+		ProjectDir:        projectDir,
+		ConfigDir:         configDir,
+		ConfigFile:        configFile,
+		ConfigExists:      configExists,
+		InfraDir:          infraDir,
+		DockerComposeFile: dockerComposeFile,
 	}
 
 	if cfg.MachineCPUs == 0 {
@@ -186,6 +223,104 @@ func loadConfig() (*forgeletConfig, error) {
 	return cfg, nil
 }
 
+func namespaceForEnv(cfg *forgeletConfig, environment string) string {
+	if strings.TrimSpace(environment) == "" || environment == "local" {
+		return "local"
+	}
+	return fmt.Sprintf("%s-%s", cfg.AppName, environment)
+}
+
+func envWithBuildEnv(environment string) []string {
+	env := os.Environ()
+	env = append(env, fmt.Sprintf("APP_ENV=%s", environment))
+	env = append(env, fmt.Sprintf("DEVENV_ENV=%s", environment))
+	return env
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
+
+func directoryExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+func discoverBuildServices(cfg *forgeletConfig) ([]BuildService, error) {
+	if fileExists(cfg.DockerComposeFile) {
+		services, err := parseComposeBuildServices(cfg.DockerComposeFile, cfg.AppName)
+		if err != nil {
+			return nil, err
+		}
+		if len(services) > 0 {
+			return services, nil
+		}
+	}
+
+	if len(cfg.Services) > 0 {
+		return cfg.Services, nil
+	}
+
+	return nil, fmt.Errorf("no build services found in %s or config", cfg.DockerComposeFile)
+}
+
+func parseComposeBuildServices(composePath string, appName string) ([]BuildService, error) {
+	data, err := os.ReadFile(composePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read docker compose file: %w", err)
+	}
+
+	var compose struct {
+		Services map[string]struct {
+			Build any `yaml:"build"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(data, &compose); err != nil {
+		return nil, fmt.Errorf("failed to parse docker compose file: %w", err)
+	}
+
+	names := make([]string, 0, len(compose.Services))
+	for name := range compose.Services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	services := make([]BuildService, 0, len(names))
+	for _, name := range names {
+		service := compose.Services[name]
+		if service.Build == nil {
+			continue
+		}
+
+		buildService := BuildService{
+			Name:        name,
+			Image:       fmt.Sprintf("%s-%s", appName, name),
+			Description: name,
+			Dockerfile:  "Dockerfile",
+			Context:     ".",
+			DevTarget:   "dev",
+			ProdTarget:  "prod",
+		}
+
+		switch build := service.Build.(type) {
+		case string:
+			buildService.Context = build
+		case map[string]any:
+			if context, ok := build["context"].(string); ok && strings.TrimSpace(context) != "" {
+				buildService.Context = context
+			}
+			if dockerfile, ok := build["dockerfile"].(string); ok && strings.TrimSpace(dockerfile) != "" {
+				buildService.Dockerfile = dockerfile
+			}
+		}
+
+		services = append(services, buildService)
+	}
+
+	return services, nil
+}
+
 func runCommand(dir string, name string, args ...string) error {
 	command := exec.Command(name, args...)
 	if dir != "" {
@@ -194,6 +329,39 @@ func runCommand(dir string, name string, args ...string) error {
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
 	command.Stdin = os.Stdin
+
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("failed running %s %s: %w", name, strings.Join(args, " "), err)
+	}
+
+	return nil
+}
+
+func runCommandWithEnv(dir string, env []string, name string, args ...string) error {
+	command := exec.Command(name, args...)
+	if dir != "" {
+		command.Dir = dir
+	}
+	command.Env = env
+	command.Stdout = os.Stdout
+	command.Stderr = os.Stderr
+	command.Stdin = os.Stdin
+
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("failed running %s %s: %w", name, strings.Join(args, " "), err)
+	}
+
+	return nil
+}
+
+func runCommandWithInput(dir string, input string, name string, args ...string) error {
+	command := exec.Command(name, args...)
+	if dir != "" {
+		command.Dir = dir
+	}
+	command.Stdout = os.Stdout
+	command.Stderr = os.Stderr
+	command.Stdin = strings.NewReader(input)
 
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("failed running %s %s: %w", name, strings.Join(args, " "), err)
@@ -261,15 +429,6 @@ func k0sIP(cfg *forgeletConfig) (string, error) {
 	return "127.0.0.1", nil
 }
 
-func kctlArgs(cfg *forgeletConfig, extra ...string) []string {
-	if cfg.BuildEnv == "local" {
-		args := []string{"k0s", "kubectl"}
-		args = append(args, extra...)
-		return args
-	}
-	return extra
-}
-
 func runKctl(cfg *forgeletConfig, args ...string) error {
 	if cfg.BuildEnv == "local" {
 		all := append([]string{"k0s", "kubectl"}, args...)
@@ -286,15 +445,48 @@ func runKctlOutput(cfg *forgeletConfig, args ...string) (string, error) {
 	return runCommandOutput("", "kubectl", args...)
 }
 
+func runPipeline(left *exec.Cmd, right *exec.Cmd) error {
+	reader, writer := io.Pipe()
+	left.Stdout = writer
+	left.Stderr = os.Stderr
+	left.Stdin = os.Stdin
+
+	right.Stdin = reader
+	right.Stdout = os.Stdout
+	right.Stderr = os.Stderr
+
+	if err := right.Start(); err != nil {
+		_ = writer.Close()
+		_ = reader.Close()
+		return err
+	}
+
+	leftErr := left.Run()
+	_ = writer.Close()
+	rightErr := right.Wait()
+	_ = reader.Close()
+
+	if leftErr != nil {
+		return leftErr
+	}
+	if rightErr != nil {
+		return rightErr
+	}
+
+	return nil
+}
+
 func importImage(cfg *forgeletConfig, image string) error {
 	if cfg.K0SMode == "vm" {
-		cmd := fmt.Sprintf("podman save %s | podman machine ssh %s -- sudo k0s ctr images import -", image, cfg.ClusterName)
-		return runCommand("", "bash", "-lc", cmd)
+		saveCmd := exec.Command("podman", "save", image)
+		importCmd := exec.Command("podman", "machine", "ssh", cfg.ClusterName, "--", "sudo", "k0s", "ctr", "images", "import", "-")
+		return runPipeline(saveCmd, importCmd)
 	}
 
 	if os.Getenv("CODESPACES") == "true" {
-		cmd := fmt.Sprintf("podman save %s | sudo k0s ctr images import -", image)
-		return runCommand("", "bash", "-lc", cmd)
+		saveCmd := exec.Command("podman", "save", image)
+		importCmd := exec.Command("sudo", "k0s", "ctr", "images", "import", "-")
+		return runPipeline(saveCmd, importCmd)
 	}
 
 	tmpTar := filepath.Join(os.TempDir(), fmt.Sprintf("k0s-image-%d.tar", os.Getpid()))
@@ -306,24 +498,55 @@ func importImage(cfg *forgeletConfig, image string) error {
 	return runCommand("", "sudo", "k0s", "ctr", "images", "import", tmpTar)
 }
 
+func updateHostsEntries(targetPath string, marker string, entries []string, useSudo bool) error {
+	existing := []byte{}
+	if data, err := os.ReadFile(targetPath); err == nil {
+		existing = data
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	lines := strings.Split(strings.ReplaceAll(string(existing), "\r\n", "\n"), "\n")
+	filtered := make([]string, 0, len(lines)+len(entries))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.Contains(line, marker) {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	filtered = append(filtered, entries...)
+
+	content := strings.Join(filtered, "\n") + "\n"
+	if !useSudo {
+		return os.WriteFile(targetPath, []byte(content), 0644)
+	}
+	return runCommandWithInput("", content, "sudo", "tee", targetPath)
+}
+
+func applyManifest(cfg *forgeletConfig, manifest string) error {
+	if cfg.BuildEnv == "local" {
+		return runCommandWithInput("", manifest, "sudo", "k0s", "kubectl", "apply", "-f", "-")
+	}
+	return runCommandWithInput("", manifest, "kubectl", "apply", "-f", "-")
+}
+
 func applyEnvSecrets(cfg *forgeletConfig) error {
 	envFile := filepath.Join(cfg.ProjectDir, ".env.local")
 	if _, err := os.Stat(envFile); os.IsNotExist(err) {
 		envFile = filepath.Join(cfg.ProjectDir, ".env")
 		if _, err := os.Stat(envFile); os.IsNotExist(err) {
-			return nil // No env file to apply
+			return nil
 		}
 	}
 
-	fmt.Printf("Applying secrets from %s to namespace %s\n", filepath.Base(envFile), cfg.BuildEnv)
+	namespace := namespaceForEnv(cfg, cfg.BuildEnv)
+	fmt.Printf("Applying secrets from %s to namespace %s\n", filepath.Base(envFile), namespace)
 
-	// We need to pipe: kubectl create secret ... --dry-run=client -o yaml | kubectl apply -f -
-	cmdStr := fmt.Sprintf("kubectl create secret generic forgelet-secrets --from-env-file=%s -n %s --dry-run=client -o yaml | kubectl apply -f -", envFile, cfg.BuildEnv)
-	
+	cmdStr := fmt.Sprintf("kubectl create secret generic forgelet-secrets --from-env-file=%s -n %s --dry-run=client -o yaml | kubectl apply -f -", envFile, namespace)
 	if cfg.BuildEnv == "local" {
-		cmdStr = fmt.Sprintf("sudo k0s kubectl create secret generic forgelet-secrets --from-env-file=%s -n %s --dry-run=client -o yaml | sudo k0s kubectl apply -f -", envFile, cfg.BuildEnv)
+		cmdStr = fmt.Sprintf("sudo k0s kubectl create secret generic forgelet-secrets --from-env-file=%s -n %s --dry-run=client -o yaml | sudo k0s kubectl apply -f -", envFile, namespace)
 	}
 
 	return runCommand("", "bash", "-c", cmdStr)
 }
-

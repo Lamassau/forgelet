@@ -1,0 +1,30 @@
+cluster:
+  clusterName: k0s-dev
+  kubeConfigDir: ~/.kube
+
+app:
+  name: forgelet
+  domain: ${app.name}.local
+
+podman:
+  machine:
+    cpus: 4
+    memory: 8192
+    disk: 50
+  registry: localhost:5000
+
+k0s:
+  version: ""
+
+metallb:
+  version: v0.14.9
+  poolRange: ""
+
+traefik:
+  image: traefik:v3.2.0
+  crdUrl: https://raw.githubusercontent.com/traefik/traefik/v3.2.0/docs/content/reference/dynamic-configuration/kubernetes-crd-definition-v1.yml
+
+build:
+  Environment: local
+  defaultEnvironment: local
+  version: local

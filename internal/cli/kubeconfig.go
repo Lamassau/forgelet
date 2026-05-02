@@ -48,6 +48,7 @@ var kubeconfigCmd = &cobra.Command{
 
 		abs, _ := filepath.Abs(cfg.KubeConfigPath)
 		fmt.Printf("Kubeconfig saved: %s\n", abs)
+		fmt.Printf("Export with: export KUBECONFIG=%s\n", abs)
 		return nil
 	},
 }

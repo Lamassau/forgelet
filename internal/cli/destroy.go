@@ -40,12 +40,22 @@ var destroyCmd = &cobra.Command{
 
 		if cfg.Platform == "darwin" {
 			_ = runCommand("", "sudo", "rm", "-f", "/etc/resolver/"+cfg.Domain)
+			tld := cfg.Domain[strings.LastIndex(cfg.Domain, ".")+1:]
+			if tld != cfg.Domain {
+				_ = runCommand("", "sudo", "rm", "-f", "/etc/resolver/"+tld)
+			}
 		} else {
 			marker := fmt.Sprintf("# k0s-%s", cfg.ClusterName)
-			_ = runCommand("", "sudo", "sed", "-i", fmt.Sprintf("/%s/d", marker), "/etc/hosts")
+			_ = updateHostsEntries("/etc/hosts", marker, nil, true)
+			if cfg.Platform == "wsl" {
+				_ = updateHostsEntries("/mnt/c/Windows/System32/drivers/etc/hosts", marker, nil, false)
+			}
+			if cfg.Platform == "linux" {
+				_ = runCommand("", "sudo", "systemctl", "restart", "systemd-resolved")
+			}
 		}
 
-		fmt.Println("Environment destroyed")
+		fmt.Println("Environment destroyed. Run 'forgelet up' to start fresh.")
 		return nil
 	},
 }

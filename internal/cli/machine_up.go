@@ -19,7 +19,9 @@ var machineUpCmd = &cobra.Command{
 		if cfg.K0SMode == "native" {
 			fmt.Println("Native mode - no Podman machine required")
 			if os.Getenv("CODESPACES") != "true" {
-				_ = runCommand("", "systemctl", "--user", "start", "podman.socket")
+				if err := runCommand("", "systemctl", "--user", "is-active", "podman.socket"); err != nil {
+					_ = runCommand("", "systemctl", "--user", "start", "podman.socket")
+				}
 			} else {
 				fmt.Println("Codespace detected - skipping systemctl for podman.socket")
 			}

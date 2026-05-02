@@ -22,13 +22,19 @@ var buildCmd = &cobra.Command{
 		if len(args) == 1 && strings.TrimSpace(args[0]) != "" {
 			environment = strings.TrimSpace(args[0])
 		}
+		namespace := namespaceForEnv(cfg, environment)
+
+		services, err := discoverBuildServices(cfg)
+		if err != nil {
+			return err
+		}
 
 		fmt.Printf("Building images for environment: %s (tag: %s)\n", environment, cfg.Version)
-		for _, service := range cfg.Services {
-			resolvedImage := resolveVarRef(service.Image, cfg.AppName, service.Name)
+		for _, service := range services {
+			resolvedImage := resolveVarRef(firstNonEmpty(service.Image, fmt.Sprintf("%s-%s", cfg.AppName, service.Name)), cfg.AppName, service.Name)
 			tag := firstNonEmpty(service.Tags, service.Tag, cfg.Version)
 			if tag == "" {
-				tag = "local"
+				tag = environment
 			}
 
 			target := service.DevTarget
@@ -43,7 +49,17 @@ var buildCmd = &cobra.Command{
 				}
 			}
 
-			contextPath := filepath.Clean(filepath.Join(cfg.ProjectDir, service.Context))
+			contextPath := service.Context
+			if !filepath.IsAbs(contextPath) {
+				composeRelative := filepath.Join(filepath.Dir(cfg.DockerComposeFile), contextPath)
+				projectRelative := filepath.Join(cfg.ProjectDir, contextPath)
+				if directoryExists(composeRelative) {
+					contextPath = composeRelative
+				} else {
+					contextPath = projectRelative
+				}
+			}
+			contextPath = filepath.Clean(contextPath)
 			dockerfilePath := filepath.Join(contextPath, service.Dockerfile)
 			desc := firstNonEmpty(service.Description, service.Name)
 
@@ -73,8 +89,7 @@ var buildCmd = &cobra.Command{
 			}
 		}
 
-		namespace := cfg.BuildEnv
-		for _, service := range cfg.Services {
+		for _, service := range services {
 			deploy := fmt.Sprintf("%s-deployment", service.Name)
 			if err := runKctl(cfg, "get", "deployment", deploy, "-n", namespace); err == nil {
 				_ = runKctl(cfg, "rollout", "restart", fmt.Sprintf("deployment/%s", deploy), "-n", namespace)
