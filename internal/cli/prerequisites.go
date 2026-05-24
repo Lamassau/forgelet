@@ -8,6 +8,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func installSkaffold() error {
+	return runCommand("", "bash", "-lc",
+		"curl -Lo /tmp/skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64 "+
+			"&& sudo install /tmp/skaffold /usr/local/bin/skaffold && rm -f /tmp/skaffold")
+}
+
 var prerequisitesCmd = &cobra.Command{
 	Use:   "prerequisites",
 	Short: "Install required tools (auto-detects OS)",
@@ -55,7 +61,7 @@ var prerequisitesCmd = &cobra.Command{
 				}
 			}
 			if !commandExists("skaffold") {
-				if err := runCommand("", "bash", "-lc", "curl -Lo /tmp/skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64 && sudo install /tmp/skaffold /usr/local/bin/skaffold && rm -f /tmp/skaffold"); err != nil {
+				if err := installSkaffold(); err != nil {
 					return err
 				}
 			}
@@ -84,7 +90,7 @@ var prerequisitesCmd = &cobra.Command{
 				}
 			}
 			if !commandExists("skaffold") {
-				if err := runCommand("", "bash", "-lc", "curl -Lo /tmp/skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64 && sudo install /tmp/skaffold /usr/local/bin/skaffold && rm -f /tmp/skaffold"); err != nil {
+				if err := installSkaffold(); err != nil {
 					return err
 				}
 			}

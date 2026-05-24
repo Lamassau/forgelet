@@ -28,7 +28,7 @@ var devCmd = &cobra.Command{
 		_ = applyEnvSecrets(cfg)
 
 		fmt.Println("Synthesizing CDK8s manifests...")
-		if err := runCommand(cfg.InfraDir, "pnpm", "install", "--silent"); err != nil {
+		if err := pnpmInstallIfNeeded(cfg.InfraDir); err != nil {
 			return err
 		}
 		if err := runCommand(cfg.InfraDir, "npx", "cdk8s", "synth"); err != nil {

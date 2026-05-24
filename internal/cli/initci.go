@@ -42,7 +42,7 @@ on:
     branches: [ main, develop ]
 
 env:
-  GO_VERSION: '1.21'
+  GO_VERSION: '1.22'
   forgelet_ENV: prod
 
 jobs:
@@ -60,7 +60,7 @@ jobs:
 
       - name: Install Forgelet CLI
         run: |
-          go install github.com/yourusername/forgelet/cmd/forgelet@latest
+          go install github.com/lnyousif/forgelet/cmd/forgelet@latest
           # Or build from source if in the same repo:
           # go build -o forgelet ./cmd/forgelet
           # sudo mv forgelet /usr/local/bin/

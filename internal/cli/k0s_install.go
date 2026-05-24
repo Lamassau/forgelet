@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var k0sInstallCmd = &cobra.Command{
@@ -39,7 +40,10 @@ var k0sInstallCmd = &cobra.Command{
 			return err
 		}
 
-		k0sConfig := fmt.Sprintf("apiVersion: k0s.k0sproject.io/v1beta1\nkind: ClusterConfig\nmetadata:\n  name: %s\nspec:\n  api:\n    sans:\n      - %s\n      - 127.0.0.1\n      - localhost\n  network:\n    provider: kuberouter\n    podCIDR: 10.244.0.0/16\n    serviceCIDR: 10.96.0.0/12\n", cfg.ClusterName, hostIP)
+		k0sConfig, err := buildK0SConfig(cfg.ClusterName, hostIP)
+		if err != nil {
+			return fmt.Errorf("failed to build k0s config: %w", err)
+		}
 
 		if cfg.K0SMode == "vm" {
 			if err := runK0SExec(cfg, "sudo", "mkdir", "-p", "/etc/k0s"); err != nil {
@@ -73,12 +77,18 @@ var k0sInstallCmd = &cobra.Command{
 			return err
 		}
 
+		nodeReady := false
 		for i := 0; i < 60; i++ {
 			nodes, _ := runK0SExecOutput(cfg, "sudo", "k0s", "kubectl", "get", "nodes")
 			if strings.Contains(nodes, " Ready") {
+				nodeReady = true
 				break
 			}
+			fmt.Printf("Waiting for node to be Ready (%d/60)...\n", i+1)
 			time.Sleep(3 * time.Second)
+		}
+		if !nodeReady {
+			return fmt.Errorf("k0s node did not become Ready within 180s")
 		}
 
 		if err := runK0SSudo(cfg, "k0s", "kubectl", "get", "nodes", "-o", "wide"); err != nil {
@@ -91,4 +101,39 @@ var k0sInstallCmd = &cobra.Command{
 
 func init() {
 	RootCmd.AddCommand(k0sInstallCmd)
+}
+
+type k0sClusterConfig struct {
+	APIVersion string `yaml:"apiVersion"`
+	Kind       string `yaml:"kind"`
+	Metadata   struct {
+		Name string `yaml:"name"`
+	} `yaml:"metadata"`
+	Spec struct {
+		API struct {
+			SANs []string `yaml:"sans"`
+		} `yaml:"api"`
+		Network struct {
+			Provider    string `yaml:"provider"`
+			PodCIDR     string `yaml:"podCIDR"`
+			ServiceCIDR string `yaml:"serviceCIDR"`
+		} `yaml:"network"`
+	} `yaml:"spec"`
+}
+
+func buildK0SConfig(clusterName, hostIP string) (string, error) {
+	var cfg k0sClusterConfig
+	cfg.APIVersion = "k0s.k0sproject.io/v1beta1"
+	cfg.Kind = "ClusterConfig"
+	cfg.Metadata.Name = clusterName
+	cfg.Spec.API.SANs = []string{hostIP, "127.0.0.1", "localhost"}
+	cfg.Spec.Network.Provider = "kuberouter"
+	cfg.Spec.Network.PodCIDR = "10.244.0.0/16"
+	cfg.Spec.Network.ServiceCIDR = "10.96.0.0/12"
+
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }

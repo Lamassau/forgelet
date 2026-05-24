@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -46,24 +45,15 @@ subjects:
   name: forgelet-admin
   namespace: kubernetes-dashboard
 `
-		// Apply the SA manifest
-		if cfg.BuildEnv == "local" {
-			// runKctl wrapper uses sudo k0s kubectl
-			applyCmd := exec.Command("sudo", "k0s", "kubectl", "apply", "-f", "-")
-			applyCmd.Stdin = strings.NewReader(saManifest)
-			if err := applyCmd.Run(); err != nil {
-				return fmt.Errorf("failed to apply service account: %v", err)
-			}
-		} else {
-			applyCmd := exec.Command("kubectl", "apply", "-f", "-")
-			applyCmd.Stdin = strings.NewReader(saManifest)
-			if err := applyCmd.Run(); err != nil {
-				return fmt.Errorf("failed to apply service account: %v", err)
-			}
+		if err := applyManifest(cfg, saManifest); err != nil {
+			return fmt.Errorf("failed to apply service account: %v", err)
 		}
 
 		fmt.Println("Waiting for dashboard to be ready...")
-		_ = runKctl(cfg, "wait", "deploy/kubernetes-dashboard", "-n", "kubernetes-dashboard", "--for=condition=available", "--timeout=120s")
+		if err := runKctl(cfg, "wait", "deploy/kubernetes-dashboard", "-n", "kubernetes-dashboard",
+			"--for=condition=available", "--timeout=120s"); err != nil {
+			fmt.Printf("Warning: dashboard deployment not ready: %v\n", err)
+		}
 
 		fmt.Println("Generating token...")
 		tokenCmdArgs := []string{"create", "token", "forgelet-admin", "-n", "kubernetes-dashboard", "--duration=24h"}

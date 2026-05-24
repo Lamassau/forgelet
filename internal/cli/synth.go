@@ -11,7 +11,7 @@ var synthCmd = &cobra.Command{
 			return err
 		}
 
-		if err := runCommand(cfg.InfraDir, "pnpm", "install", "--silent"); err != nil {
+		if err := pnpmInstallIfNeeded(cfg.InfraDir); err != nil {
 			return err
 		}
 		return runCommand(cfg.InfraDir, "npx", "cdk8s", "synth")

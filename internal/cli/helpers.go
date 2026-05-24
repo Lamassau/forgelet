@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -53,6 +54,10 @@ type forgeletConfig struct {
 	ConfigExists      bool
 	InfraDir          string
 	DockerComposeFile string
+	AppDeployments    []string
+	PlatformImages    []string
+	RegistryTLSVerify bool
+	LocalPathVersion  string
 }
 
 func findProjectRoot() (string, string, string, bool, error) {
@@ -208,6 +213,10 @@ func loadConfig() (*forgeletConfig, error) {
 		ConfigExists:      configExists,
 		InfraDir:          infraDir,
 		DockerComposeFile: dockerComposeFile,
+		AppDeployments:    v.GetStringSlice("deploy.deployments"),
+		PlatformImages:    v.GetStringSlice("deploy.platformImages"),
+		RegistryTLSVerify: v.GetBool("podman.registryTLSVerify"),
+		LocalPathVersion:  firstNonEmpty(v.GetString("localPath.version"), "v0.0.31"),
 	}
 
 	if cfg.MachineCPUs == 0 {
@@ -321,53 +330,43 @@ func parseComposeBuildServices(composePath string, appName string) ([]BuildServi
 	return services, nil
 }
 
-func runCommand(dir string, name string, args ...string) error {
+type cmdOpts struct {
+	Dir   string
+	Env   []string
+	Input io.Reader
+}
+
+func runCmd(opts cmdOpts, name string, args ...string) error {
 	command := exec.Command(name, args...)
-	if dir != "" {
-		command.Dir = dir
+	if opts.Dir != "" {
+		command.Dir = opts.Dir
+	}
+	if opts.Env != nil {
+		command.Env = opts.Env
+	}
+	if opts.Input != nil {
+		command.Stdin = opts.Input
+	} else {
+		command.Stdin = os.Stdin
 	}
 	command.Stdout = os.Stdout
 	command.Stderr = os.Stderr
-	command.Stdin = os.Stdin
-
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("failed running %s %s: %w", name, strings.Join(args, " "), err)
 	}
-
 	return nil
+}
+
+func runCommand(dir string, name string, args ...string) error {
+	return runCmd(cmdOpts{Dir: dir}, name, args...)
 }
 
 func runCommandWithEnv(dir string, env []string, name string, args ...string) error {
-	command := exec.Command(name, args...)
-	if dir != "" {
-		command.Dir = dir
-	}
-	command.Env = env
-	command.Stdout = os.Stdout
-	command.Stderr = os.Stderr
-	command.Stdin = os.Stdin
-
-	if err := command.Run(); err != nil {
-		return fmt.Errorf("failed running %s %s: %w", name, strings.Join(args, " "), err)
-	}
-
-	return nil
+	return runCmd(cmdOpts{Dir: dir, Env: env}, name, args...)
 }
 
 func runCommandWithInput(dir string, input string, name string, args ...string) error {
-	command := exec.Command(name, args...)
-	if dir != "" {
-		command.Dir = dir
-	}
-	command.Stdout = os.Stdout
-	command.Stderr = os.Stderr
-	command.Stdin = strings.NewReader(input)
-
-	if err := command.Run(); err != nil {
-		return fmt.Errorf("failed running %s %s: %w", name, strings.Join(args, " "), err)
-	}
-
-	return nil
+	return runCmd(cmdOpts{Dir: dir, Input: strings.NewReader(input)}, name, args...)
 }
 
 func runSteps(steps ...func() error) error {
@@ -543,10 +542,56 @@ func applyEnvSecrets(cfg *forgeletConfig) error {
 	namespace := namespaceForEnv(cfg, cfg.BuildEnv)
 	fmt.Printf("Applying secrets from %s to namespace %s\n", filepath.Base(envFile), namespace)
 
-	cmdStr := fmt.Sprintf("kubectl create secret generic forgelet-secrets --from-env-file=%s -n %s --dry-run=client -o yaml | kubectl apply -f -", envFile, namespace)
-	if cfg.BuildEnv == "local" {
-		cmdStr = fmt.Sprintf("sudo k0s kubectl create secret generic forgelet-secrets --from-env-file=%s -n %s --dry-run=client -o yaml | sudo k0s kubectl apply -f -", envFile, namespace)
+	dryRunArgs := []string{
+		"create", "secret", "generic", "forgelet-secrets",
+		"--from-env-file=" + envFile,
+		"-n", namespace,
+		"--dry-run=client", "-o", "yaml",
 	}
+	var dryRun, apply *exec.Cmd
+	if cfg.BuildEnv == "local" {
+		dryRun = exec.Command("sudo", append([]string{"k0s", "kubectl"}, dryRunArgs...)...)
+		apply = exec.Command("sudo", "k0s", "kubectl", "apply", "-f", "-")
+	} else {
+		dryRun = exec.Command("kubectl", dryRunArgs...)
+		apply = exec.Command("kubectl", "apply", "-f", "-")
+	}
+	return runPipeline(dryRun, apply)
+}
 
-	return runCommand("", "bash", "-c", cmdStr)
+func imageExistsInK0s(cfg *forgeletConfig, image string) bool {
+	out, err := runK0SExecOutput(cfg, "sudo", "k0s", "ctr", "images", "ls",
+		"--format", "{{.Name}}", "-q")
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.TrimSpace(line) == image {
+			return true
+		}
+	}
+	return false
+}
+
+func pnpmInstallIfNeeded(dir string) error {
+	pkgInfo, pkgErr := os.Stat(filepath.Join(dir, "package.json"))
+	nmInfo, nmErr := os.Stat(filepath.Join(dir, "node_modules"))
+	if pkgErr == nil && nmErr == nil && nmInfo.ModTime().After(pkgInfo.ModTime()) {
+		return nil
+	}
+	return runCommand(dir, "pnpm", "install", "--silent")
+}
+
+func validateMetalLBPool(pool string) error {
+	parts := strings.SplitN(pool, "-", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("metallb pool range %q must be in format START-END", pool)
+	}
+	if net.ParseIP(parts[0]) == nil {
+		return fmt.Errorf("metallb pool start IP %q is not valid", parts[0])
+	}
+	if net.ParseIP(parts[1]) == nil {
+		return fmt.Errorf("metallb pool end IP %q is not valid", parts[1])
+	}
+	return nil
 }
