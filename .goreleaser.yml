@@ -42,11 +42,32 @@ snapshot:
 
 changelog:
   sort: asc
+  use: github
+  groups:
+    - title: "⚡ Features"
+      regexp: "^feat(\\(.+\\))?!?:"
+      order: 0
+    - title: "🐛 Bug Fixes"
+      regexp: "^fix(\\(.+\\))?!?:"
+      order: 1
+    - title: "⚡ Performance Improvements"
+      regexp: "^perf(\\(.+\\))?!?:"
+      order: 2
+    - title: "🔄 Reverts"
+      regexp: "^revert(\\(.+\\))?:"
+      order: 3
+    - title: "📖 Documentation"
+      regexp: "^docs(\\(.+\\))?:"
+      order: 4
+    - title: "🧹 Other"
+      order: 999
   filters:
     exclude:
-      - "^docs:"
-      - "^test:"
       - "^chore:"
+      - "^test:"
+      - "^ci:"
+      - "^build:"
+      - "^refactor:"
 
 release:
   github:
