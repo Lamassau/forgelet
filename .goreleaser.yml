@@ -11,9 +11,9 @@ builds:
     main: ./cmd/forgelet
     binary: forgelet
     ldflags:
-      - -X github.com/lnyousif/forgelet/internal/cli.Version={{.Version}}
-      - -X github.com/lnyousif/forgelet/internal/cli.Commit={{.Commit}}
-      - -X github.com/lnyousif/forgelet/internal/cli.BuildDate={{.Date}}
+      - -X github.com/Lamassau/forgelet/internal/cli.Version={{.Version}}
+      - -X github.com/Lamassau/forgelet/internal/cli.Commit={{.Commit}}
+      - -X github.com/Lamassau/forgelet/internal/cli.BuildDate={{.Date}}
     env:
       - CGO_ENABLED=0
     goos:
@@ -71,5 +71,5 @@ changelog:
 
 release:
   github:
-    owner: lnyousif
+    owner: Lamassau
     name: forgelet

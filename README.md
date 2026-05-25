@@ -62,7 +62,7 @@ Use `forgelet prerequisites` to install or verify most of these tools.
 ### From source
 
 ```bash
-git clone https://github.com/lnyousif/forgelet.git
+git clone https://github.com/Lamassau/forgelet.git
 cd forgelet
 go build -o bin/forgelet ./cmd/forgelet
 ./bin/forgelet --help
@@ -71,7 +71,7 @@ go build -o bin/forgelet ./cmd/forgelet
 ### Go install
 
 ```bash
-go install github.com/lnyousif/forgelet/cmd/forgelet@latest
+go install github.com/Lamassau/forgelet/cmd/forgelet@latest
 forgelet version
 ```
 
@@ -114,30 +114,30 @@ forgelet config show
 
 Environment-variable overrides are reflected in `forgelet config show`.
 
-| Variable | Purpose |
-| --- | --- |
-| `APP_ENV` | Selects build/deploy environment |
-| `DEVENV_ENV` | Alternate environment selector |
-| `FORGELET_ENV` | Alternate environment selector |
-| `forgelet_ENV` | Legacy environment selector |
-| `APP_NAME` | Overrides `app.name` |
-| `DOMAIN` | Overrides `app.domain` |
-| `CLUSTER_NAME` | Overrides `cluster.clusterName` |
-| `KUBECONFIG_DIR` | Overrides `cluster.kubeConfigDir` |
-| `DOCKER_COMPOSE_FILE` | Overrides compose discovery |
-| `INFRA_DIR` | Overrides `.infra` directory |
-| `DOCKER_REGISTRY` | Overrides `podman.registry` |
-| `K0S_VERSION` | Pins k0s install version |
-| `METALLB_POOL_RANGE` | Overrides MetalLB IP range |
-| `VERSION` | Overrides image tag / build version |
-| `CORE_DNS_UPSTREAMS` | Overrides CoreDNS forwarders on native Linux |
-| `DOCKER_REGISTRY_USERNAME` | Registry login username |
-| `DOCKER_REGISTRY_PASSWORD` | Registry login password |
-| `PODMAN_REGISTRY_USERNAME` | Alternate registry login username |
-| `PODMAN_REGISTRY_PASSWORD` | Alternate registry login password |
-| `CODESPACES` | Enables Codespaces-specific behavior |
-| `K0S_MODE` | Forces platform mode detection (for Linux) |
-| `HOME` | Used when expanding `${HOME}` in config |
+| Variable                   | Purpose                                      |
+| -------------------------- | -------------------------------------------- |
+| `APP_ENV`                  | Selects build/deploy environment             |
+| `DEVENV_ENV`               | Alternate environment selector               |
+| `FORGELET_ENV`             | Alternate environment selector               |
+| `forgelet_ENV`             | Legacy environment selector                  |
+| `APP_NAME`                 | Overrides `app.name`                         |
+| `DOMAIN`                   | Overrides `app.domain`                       |
+| `CLUSTER_NAME`             | Overrides `cluster.clusterName`              |
+| `KUBECONFIG_DIR`           | Overrides `cluster.kubeConfigDir`            |
+| `DOCKER_COMPOSE_FILE`      | Overrides compose discovery                  |
+| `INFRA_DIR`                | Overrides `.infra` directory                 |
+| `DOCKER_REGISTRY`          | Overrides `podman.registry`                  |
+| `K0S_VERSION`              | Pins k0s install version                     |
+| `METALLB_POOL_RANGE`       | Overrides MetalLB IP range                   |
+| `VERSION`                  | Overrides image tag / build version          |
+| `CORE_DNS_UPSTREAMS`       | Overrides CoreDNS forwarders on native Linux |
+| `DOCKER_REGISTRY_USERNAME` | Registry login username                      |
+| `DOCKER_REGISTRY_PASSWORD` | Registry login password                      |
+| `PODMAN_REGISTRY_USERNAME` | Alternate registry login username            |
+| `PODMAN_REGISTRY_PASSWORD` | Alternate registry login password            |
+| `CODESPACES`               | Enables Codespaces-specific behavior         |
+| `K0S_MODE`                 | Forces platform mode detection (for Linux)   |
+| `HOME`                     | Used when expanding `${HOME}` in config      |
 
 ## Commands
 

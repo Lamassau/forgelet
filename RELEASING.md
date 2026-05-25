@@ -6,7 +6,7 @@ Use this checklist for a clean open-source release.
 
 - Update docs (`README.md`, command examples, changelog if used).
 - Verify module path in `go.mod`:
-  - `module github.com/lnyousif/forgelet`
+  - `module github.com/Lamassau/forgelet`
 - Ensure workspace is clean:
 
 ```bash
@@ -43,7 +43,7 @@ git push origin v0.1.0
 - Verify install works:
 
 ```bash
-go install github.com/lnyousif/forgelet/cmd/forgelet@v0.1.0
+go install github.com/Lamassau/forgelet/cmd/forgelet@v0.1.0
 forgelet --help
 ```
 
