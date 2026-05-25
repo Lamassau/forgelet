@@ -60,7 +60,7 @@ jobs:
 
       - name: Install Forgelet CLI
         run: |
-          go install github.com/lnyousif/forgelet/cmd/forgelet@latest
+          go install github.com/Lamassau/forgelet/cmd/forgelet@latest
           # Or build from source if in the same repo:
           # go build -o forgelet ./cmd/forgelet
           # sudo mv forgelet /usr/local/bin/

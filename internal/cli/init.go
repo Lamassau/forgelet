@@ -75,7 +75,7 @@ var initCmd = &cobra.Command{
 
 func forgeletYAMLTemplate(appName, domain, clusterName string) string {
 	return fmt.Sprintf(`# Forgelet configuration
-# See: https://github.com/lnyousif/forgelet/docs/config-reference.md
+# See: https://github.com/Lamassau/forgelet/docs/config-reference.md
 
 cluster:
   # Name of the k0s cluster / Podman Machine

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/lnyousif/forgelet/internal/cli"
+	"github.com/Lamassau/forgelet/internal/cli"
 )
 
 func main() {

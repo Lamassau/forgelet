@@ -1,4 +1,4 @@
-module github.com/lnyousif/forgelet
+module github.com/Lamassau/forgelet
 
 go 1.22
 
