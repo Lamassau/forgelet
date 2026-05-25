@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 
 	"github.com/spf13/cobra"
 )
@@ -47,8 +49,10 @@ var devCmd = &cobra.Command{
 		}
 
 		fmt.Println("Starting Skaffold dev loop (Ctrl+C to stop and clean up)...")
-		return runCommand(cfg.ProjectDir,
-			"skaffold",
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+
+		args = []string{
 			"dev",
 			"--cleanup=true",
 			"--port-forward=false",
@@ -56,7 +60,16 @@ var devCmd = &cobra.Command{
 			"--trigger=manual",
 			"--auto-build=false",
 			"--auto-deploy=true",
-		)
+		}
+		skaffoldCmd := exec.CommandContext(ctx, "skaffold", args...)
+		skaffoldCmd.Dir = cfg.ProjectDir
+		skaffoldCmd.Stdout = os.Stdout
+		skaffoldCmd.Stderr = os.Stderr
+		skaffoldCmd.Stdin = os.Stdin
+		if err := skaffoldCmd.Run(); err != nil {
+			return fmt.Errorf("failed running skaffold %s: %w", args[0], err)
+		}
+		return nil
 	},
 }
 

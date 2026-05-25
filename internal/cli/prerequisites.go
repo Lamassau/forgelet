@@ -9,9 +9,7 @@ import (
 )
 
 func installSkaffold() error {
-	return runCommand("", "bash", "-lc",
-		"curl -Lo /tmp/skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64 "+
-			"&& sudo install /tmp/skaffold /usr/local/bin/skaffold && rm -f /tmp/skaffold")
+	return runCommand("", "bash", "-lc", "curl -Lo ./skaffold https://storage.googleapis.com/skaffold/releases/latest/skaffold-linux-amd64 && sudo install ./skaffold /usr/local/bin/skaffold && rm -f ./skaffold")
 }
 
 var prerequisitesCmd = &cobra.Command{
@@ -35,6 +33,9 @@ var prerequisitesCmd = &cobra.Command{
 						return err
 					}
 				}
+			}
+			if !commandExists("pnpm") {
+				_ = runCommand("", "bash", "-lc", "corepack enable && corepack prepare pnpm@latest --activate")
 			}
 		case "wsl":
 			if commandExists("apt-get") {
@@ -64,6 +65,9 @@ var prerequisitesCmd = &cobra.Command{
 				if err := installSkaffold(); err != nil {
 					return err
 				}
+			}
+			if !commandExists("pnpm") {
+				_ = runCommand("", "bash", "-lc", "corepack enable && corepack prepare pnpm@latest --activate")
 			}
 		case "linux":
 			if commandExists("dnf") {
@@ -99,6 +103,9 @@ var prerequisitesCmd = &cobra.Command{
 					return err
 				}
 			}
+			if !commandExists("pnpm") {
+				_ = runCommand("", "bash", "-lc", "corepack enable && corepack prepare pnpm@latest --activate")
+			}
 		default:
 			return fmt.Errorf("unsupported platform: %s", cfg.Platform)
 		}
@@ -114,7 +121,7 @@ var prerequisitesCmd = &cobra.Command{
 				if runtime.GOARCH == "arm64" {
 					arch = "arm64"
 				}
-				if err := runCommand("", "bash", "-lc", fmt.Sprintf("YQ_VERSION=$(curl -fsSL https://api.github.com/repos/mikefarah/yq/releases/latest | grep '\"tag_name\"' | sed -E 's/.*\"([^\"]+)\".*/\\1/') && curl -fsSL https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_%s -o /tmp/yq && chmod +x /tmp/yq && sudo mv /tmp/yq /usr/local/bin/yq", arch)); err != nil {
+				if err := runCommand("", "bash", "-lc", fmt.Sprintf("YQ_VERSION=$(curl -fsSL https://api.github.com/repos/mikefarah/yq/releases/latest | grep '\"tag_name\"' | sed -E 's/.*\"([^\"]+)\".*/\\1/') && curl -fsSL https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/yq_linux_%s -o ./yq && chmod +x ./yq && sudo mv ./yq /usr/local/bin/yq", arch)); err != nil {
 					return err
 				}
 			}

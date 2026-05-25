@@ -17,6 +17,9 @@ var deployCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		if err := validateConfig(cfg); err != nil {
+			return err
+		}
 		return runSteps(
 			func() error { return deployEnsureRegistry(cfg) },
 			func() error { return deployPatchCoreDNS(cfg) },

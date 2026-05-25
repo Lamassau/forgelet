@@ -130,13 +130,92 @@ func resolveVarRef(value string, appName string, serviceName string) string {
 	resolved := value
 	resolved = strings.ReplaceAll(resolved, "${app.name}", appName)
 	resolved = strings.ReplaceAll(resolved, "${service.name}", serviceName)
+	resolved = strings.ReplaceAll(resolved, "${HOME}", os.Getenv("HOME"))
 	return resolved
 }
 
+func resolveConfigVars(cfg *forgeletConfig) {
+	replace := func(value, serviceName string) string {
+		resolved := resolveVarRef(value, cfg.AppName, serviceName)
+		resolved = strings.ReplaceAll(resolved, "${cluster.name}", cfg.ClusterName)
+		resolved = strings.ReplaceAll(resolved, "${env}", cfg.BuildEnv)
+		return resolved
+	}
+
+	cfg.KubeConfigDir = replace(cfg.KubeConfigDir, "")
+	cfg.KubeConfigPath = replace(cfg.KubeConfigPath, "")
+	cfg.Domain = replace(cfg.Domain, "")
+	cfg.DockerRegistry = replace(cfg.DockerRegistry, "")
+	cfg.K0SVersion = replace(cfg.K0SVersion, "")
+	cfg.MetallbVersion = replace(cfg.MetallbVersion, "")
+	cfg.MetallbPool = replace(cfg.MetallbPool, "")
+	cfg.TraefikImage = replace(cfg.TraefikImage, "")
+	cfg.TraefikCRDURL = replace(cfg.TraefikCRDURL, "")
+	cfg.Version = replace(cfg.Version, "")
+	cfg.ProjectDir = replace(cfg.ProjectDir, "")
+	cfg.ConfigDir = replace(cfg.ConfigDir, "")
+	cfg.ConfigFile = replace(cfg.ConfigFile, "")
+	cfg.InfraDir = replace(cfg.InfraDir, "")
+	cfg.DockerComposeFile = replace(cfg.DockerComposeFile, "")
+	cfg.LocalPathVersion = replace(cfg.LocalPathVersion, "")
+	for i := range cfg.PlatformImages {
+		cfg.PlatformImages[i] = replace(cfg.PlatformImages[i], "")
+	}
+	for i := range cfg.AppDeployments {
+		cfg.AppDeployments[i] = replace(cfg.AppDeployments[i], "")
+	}
+	for i := range cfg.Services {
+		cfg.Services[i].Name = replace(cfg.Services[i].Name, cfg.Services[i].Name)
+		cfg.Services[i].Image = replace(cfg.Services[i].Image, cfg.Services[i].Name)
+		cfg.Services[i].Description = replace(cfg.Services[i].Description, cfg.Services[i].Name)
+		cfg.Services[i].Dockerfile = replace(cfg.Services[i].Dockerfile, cfg.Services[i].Name)
+		cfg.Services[i].Context = replace(cfg.Services[i].Context, cfg.Services[i].Name)
+		cfg.Services[i].DevTarget = replace(cfg.Services[i].DevTarget, cfg.Services[i].Name)
+		cfg.Services[i].ProdTarget = replace(cfg.Services[i].ProdTarget, cfg.Services[i].Name)
+		cfg.Services[i].Tags = replace(cfg.Services[i].Tags, cfg.Services[i].Name)
+		cfg.Services[i].Tag = replace(cfg.Services[i].Tag, cfg.Services[i].Name)
+	}
+}
+
+func validateConfig(cfg *forgeletConfig) error {
+	if cfg.MetallbPool != "" {
+		if err := validateMetalLBPool(cfg.MetallbPool); err != nil {
+			return err
+		}
+	}
+	if cfg.DockerRegistry == "localhost:5000" && cfg.RegistryTLSVerify {
+		fmt.Fprintf(os.Stderr, "⚠ Warning: DockerRegistry is localhost:5000 but registryTLSVerify is true — push may fail\n")
+	}
+	return nil
+}
+
 func loadConfig() (*forgeletConfig, error) {
-	projectDir, configDir, configFile, configExists, err := findProjectRoot()
-	if err != nil {
-		return nil, err
+	var (
+		projectDir   string
+		configDir    string
+		configFile   string
+		configExists bool
+		err          error
+	)
+
+	if strings.TrimSpace(configPath) != "" {
+		configFile = configPath
+		configDir = filepath.Dir(configFile)
+		if base := filepath.Base(configDir); base == ".devenv" || base == ".forgelet" {
+			projectDir = filepath.Dir(configDir)
+		} else {
+			projectDir = configDir
+		}
+		if info, statErr := os.Stat(configFile); statErr == nil && !info.IsDir() {
+			configExists = true
+		} else if statErr != nil {
+			return nil, fmt.Errorf("failed to read %s: %w", filepath.Base(configFile), statErr)
+		}
+	} else {
+		projectDir, configDir, configFile, configExists, err = findProjectRoot()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	v := viper.New()
@@ -229,6 +308,7 @@ func loadConfig() (*forgeletConfig, error) {
 		cfg.MachineDisk = 50
 	}
 
+	resolveConfigVars(cfg)
 	return cfg, nil
 }
 
@@ -331,12 +411,20 @@ func parseComposeBuildServices(composePath string, appName string) ([]BuildServi
 }
 
 type cmdOpts struct {
-	Dir   string
-	Env   []string
-	Input io.Reader
+	Dir    string
+	Env    []string
+	Input  io.Reader
+	Stdout io.Writer
+	Stderr io.Writer
 }
 
 func runCmd(opts cmdOpts, name string, args ...string) error {
+	if verbose || dryRun {
+		fmt.Fprintf(os.Stderr, "[run] %s %s\n", name, strings.Join(args, " "))
+	}
+	if dryRun {
+		return nil
+	}
 	command := exec.Command(name, args...)
 	if opts.Dir != "" {
 		command.Dir = opts.Dir
@@ -349,8 +437,16 @@ func runCmd(opts cmdOpts, name string, args ...string) error {
 	} else {
 		command.Stdin = os.Stdin
 	}
-	command.Stdout = os.Stdout
-	command.Stderr = os.Stderr
+	if opts.Stdout != nil {
+		command.Stdout = opts.Stdout
+	} else {
+		command.Stdout = os.Stdout
+	}
+	if opts.Stderr != nil {
+		command.Stderr = opts.Stderr
+	} else {
+		command.Stderr = os.Stderr
+	}
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("failed running %s %s: %w", name, strings.Join(args, " "), err)
 	}
