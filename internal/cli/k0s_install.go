@@ -90,6 +90,11 @@ var k0sInstallCmd = &cobra.Command{
 		if !nodeReady {
 			return fmt.Errorf("k0s node did not become Ready within 180s")
 		}
+		if cfg.K0SVersion == "" {
+			if v, err := runK0SExecOutput(cfg, "k0s", "version"); err == nil {
+				fmt.Printf("Tip: pin the k0s version in forgelet.yaml: k0s.version: %s\n", strings.TrimSpace(v))
+			}
+		}
 
 		if err := runK0SSudo(cfg, "k0s", "kubectl", "get", "nodes", "-o", "wide"); err != nil {
 			return err

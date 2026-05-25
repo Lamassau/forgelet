@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"os/signal"
 	"runtime"
 	"time"
 
@@ -19,8 +22,7 @@ var dashboardCmd = &cobra.Command{
 		}
 
 		fmt.Println("Deploying Kubernetes Dashboard...")
-		err = runKctl(cfg, "apply", "-f", "https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml")
-		if err != nil {
+		if err := runKctl(cfg, "apply", "-f", "https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml"); err != nil {
 			return fmt.Errorf("failed to deploy dashboard: %v", err)
 		}
 
@@ -50,14 +52,12 @@ subjects:
 		}
 
 		fmt.Println("Waiting for dashboard to be ready...")
-		if err := runKctl(cfg, "wait", "deploy/kubernetes-dashboard", "-n", "kubernetes-dashboard",
-			"--for=condition=available", "--timeout=120s"); err != nil {
+		if err := runKctl(cfg, "wait", "deploy/kubernetes-dashboard", "-n", "kubernetes-dashboard", "--for=condition=available", "--timeout=120s"); err != nil {
 			fmt.Printf("Warning: dashboard deployment not ready: %v\n", err)
 		}
 
 		fmt.Println("Generating token...")
-		tokenCmdArgs := []string{"create", "token", "forgelet-admin", "-n", "kubernetes-dashboard", "--duration=24h"}
-		token, err := runKctlOutput(cfg, tokenCmdArgs...)
+		token, err := runKctlOutput(cfg, "create", "token", "forgelet-admin", "-n", "kubernetes-dashboard", "--duration=24h")
 		if err != nil {
 			fmt.Println("Warning: Could not create token. Older k8s version? Try 'kubectl -n kubernetes-dashboard create token forgelet-admin' manually.")
 		}
@@ -68,17 +68,28 @@ subjects:
 		fmt.Println("=======================================================")
 
 		fmt.Println("Starting kubectl proxy on http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/ (Ctrl+C to stop)...")
-
 		url := "http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/"
-
-		// Attempt to open browser
 		go func() {
 			time.Sleep(2 * time.Second)
 			openBrowser(url)
 		}()
 
-		// Start proxy in foreground
-		return runKctl(cfg, "proxy")
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+		defer stop()
+
+		var proxyCmd *exec.Cmd
+		if cfg.BuildEnv == "local" {
+			proxyCmd = exec.CommandContext(ctx, "sudo", "k0s", "kubectl", "proxy")
+		} else {
+			proxyCmd = exec.CommandContext(ctx, "kubectl", "proxy")
+		}
+		proxyCmd.Stdout = os.Stdout
+		proxyCmd.Stderr = os.Stderr
+		proxyCmd.Stdin = os.Stdin
+		if err := proxyCmd.Run(); err != nil {
+			return fmt.Errorf("failed to run kubectl proxy: %w", err)
+		}
+		return nil
 	},
 }
 

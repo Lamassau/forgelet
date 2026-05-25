@@ -1,0 +1,54 @@
+version: 2
+
+project_name: forgelet
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: forgelet
+    main: ./cmd/forgelet
+    binary: forgelet
+    ldflags:
+      - -X github.com/lnyousif/forgelet/internal/cli.Version={{.Version}}
+      - -X github.com/lnyousif/forgelet/internal/cli.Commit={{.Commit}}
+      - -X github.com/lnyousif/forgelet/internal/cli.BuildDate={{.Date}}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: forgelet
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE*
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ .Tag }}-snapshot"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: lnyousif
+    name: forgelet

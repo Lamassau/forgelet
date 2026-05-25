@@ -1,14 +1,49 @@
 package cli
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/spf13/cobra"
 )
+
+// prefixWriter wraps an io.Writer and prefixes each line with a string.
+type prefixWriter struct {
+	prefix string
+	w      io.Writer
+	buf    []byte
+}
+
+func (pw *prefixWriter) Write(p []byte) (n int, err error) {
+	pw.buf = append(pw.buf, p...)
+	for {
+		idx := bytes.IndexByte(pw.buf, '\n')
+		if idx < 0 {
+			break
+		}
+		line := pw.buf[:idx+1]
+		if _, err := fmt.Fprintf(pw.w, "[%s] %s", pw.prefix, line); err != nil {
+			return 0, err
+		}
+		pw.buf = pw.buf[idx+1:]
+	}
+	return len(p), nil
+}
+
+func (pw *prefixWriter) Flush() error {
+	if len(pw.buf) == 0 {
+		return nil
+	}
+	_, err := fmt.Fprintf(pw.w, "[%s] %s\n", pw.prefix, pw.buf)
+	pw.buf = nil
+	return err
+}
 
 var buildCmd = &cobra.Command{
 	Use:   "build",
@@ -33,7 +68,6 @@ var buildCmd = &cobra.Command{
 
 		fmt.Printf("Building images for environment: %s (tag: %s)\n", environment, cfg.Version)
 
-		// Build all services in parallel; Podman handles concurrent builds safely.
 		var (
 			wg   sync.WaitGroup
 			mu   sync.Mutex
@@ -69,9 +103,7 @@ var buildCmd = &cobra.Command{
 }
 
 func buildSingleService(cfg *forgeletConfig, service BuildService, environment string) error {
-	resolvedImage := resolveVarRef(
-		firstNonEmpty(service.Image, fmt.Sprintf("%s-%s", cfg.AppName, service.Name)),
-		cfg.AppName, service.Name)
+	resolvedImage := resolveVarRef(firstNonEmpty(service.Image, fmt.Sprintf("%s-%s", cfg.AppName, service.Name)), cfg.AppName, service.Name)
 	tag := firstNonEmpty(service.Tags, service.Tag, cfg.Version)
 	if tag == "" {
 		tag = environment
@@ -102,8 +134,12 @@ func buildSingleService(cfg *forgeletConfig, service BuildService, environment s
 	contextPath = filepath.Clean(contextPath)
 	dockerfilePath := filepath.Join(contextPath, service.Dockerfile)
 	desc := firstNonEmpty(service.Description, service.Name)
+	prefix := service.Name
 
 	fmt.Printf("Building %s (%s:%s)\n", desc, resolvedImage, tag)
+	stdout := &prefixWriter{prefix: prefix, w: os.Stdout}
+	stderr := &prefixWriter{prefix: prefix, w: os.Stderr}
+
 	buildArgs := []string{
 		"build",
 		"-t", fmt.Sprintf("%s:%s", resolvedImage, tag),
@@ -115,18 +151,28 @@ func buildSingleService(cfg *forgeletConfig, service BuildService, environment s
 		buildArgs = append(buildArgs, "--target", target)
 	}
 	buildArgs = append(buildArgs, contextPath)
-	if err := runCommand("", "podman", buildArgs...); err != nil {
+	if err := runCmd(cmdOpts{Stdout: stdout, Stderr: stderr}, "podman", buildArgs...); err != nil {
+		_ = stdout.Flush()
+		_ = stderr.Flush()
 		return err
 	}
+	_ = stdout.Flush()
+	_ = stderr.Flush()
 
 	fullImage := fmt.Sprintf("%s/%s:%s", cfg.DockerRegistry, resolvedImage, tag)
 	pushArgs := []string{"push", fullImage}
 	if !cfg.RegistryTLSVerify {
 		pushArgs = append(pushArgs, "--tls-verify=false")
 	}
-	if err := runCommand("", "podman", pushArgs...); err != nil {
+	stdout = &prefixWriter{prefix: prefix, w: os.Stdout}
+	stderr = &prefixWriter{prefix: prefix, w: os.Stderr}
+	if err := runCmd(cmdOpts{Stdout: stdout, Stderr: stderr}, "podman", pushArgs...); err != nil {
+		_ = stdout.Flush()
+		_ = stderr.Flush()
 		return err
 	}
+	_ = stdout.Flush()
+	_ = stderr.Flush()
 
 	return importImage(cfg, fullImage)
 }
